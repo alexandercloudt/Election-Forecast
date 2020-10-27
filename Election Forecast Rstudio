@@ -1,0 +1,285 @@
+# Alexander Cloudt
+# Quant III
+# Political Forecasting
+# Using 2020 ANES Pilot Data
+
+
+#########################################################
+
+
+
+####2020 ANES DATA####
+
+
+#
+
+
+
+####PRELIMINARY STUFF####
+
+
+getwd()
+
+setwd("C:/Users/16318/Desktop")
+
+library(haven)
+
+anes_pilot_2020ets_sav <- read_sav("anes_pilot_2020ets_sav.SAV")
+
+View(anes_pilot_2020ets_sav)
+
+attach(anes_pilot_2020ets_sav)
+
+install.packages("aod")
+library(aod)
+
+library(ggplot2)
+
+
+
+##########################################################
+
+
+
+####CLEANING VARIABLES####
+
+
+
+#############################
+
+
+
+#DV = Vote for president, where 0 = Challenger(Biden) and 1 = Incumbent(Trump)
+
+Vote_2020 = vote20jb
+
+table(Vote_2020)
+
+Vote_2020_Cleaned = ifelse(Vote_2020 == 2, 0,
+                           ifelse(Vote_2020 == 1, 1,
+                                  ifelse(Vote_2020 > 2, NA,
+                                         Vote_2020)))
+
+table(Vote_2020_Cleaned)
+
+class(Vote_2020_Cleaned)
+
+Vote_2020_Cleaned_Factor = as.factor(Vote_2020_Cleaned)
+
+class(Vote_2020_Cleaned_Factor)
+
+
+
+##############################
+
+
+
+####INDEPENDENT VARIABLES####
+
+
+
+####Incumbent job approval (2020)####
+
+Incumbent_Approval_2020 = apppres7
+
+table(Incumbent_Approval_2020)
+
+Incumbent_Approval_2020_Cleaned = ifelse(Incumbent_Approval_2020 > 7, NA,
+                                         Incumbent_Approval_2020)
+
+table(Incumbent_Approval_2020_Cleaned)
+
+Incumbent_Approval_2020_Cleaned_Reversed = 8 - Incumbent_Approval_2020_Cleaned 
+
+table(Incumbent_Approval_2020_Cleaned_Reversed)
+
+
+
+
+####Feelings Toward Incumbent Trump (2020)####
+
+Incumbent_Therm_2020 = fttrump1
+
+table(Incumbent_Therm_2020)
+
+Incumbent_Therm_2020_Cleaned = ifelse(Incumbent_Therm_2020 < 0, NA,
+                                      ifelse(Incumbent_Therm_2020 > 100, NA,
+                                             Incumbent_Therm_2020))
+table(Incumbent_Therm_2020_Cleaned)
+
+
+
+
+##################################################################
+
+
+
+
+####LOGIT MODEL (2020)####
+
+Logit_2020_2 = glm(Vote_2020_Cleaned_Factor ~ Incumbent_Approval_2020_Cleaned + Incumbent_Therm_2020_Cleaned, family = "binomial")
+
+summary(Logit_2020_2)
+
+#If have time, retry Wald Test.
+wald.test(b = coef(Logit_2020_2), Sigma = vcov(Logit_2020_2, Terms = 1:7))
+
+exp(coef(Logit_2020_2))
+
+exp(cbind(OR = coef(Logit_2020_2), confint(Logit_2020_2)))
+
+#For every one unit increase in "Incumbent Approval", 
+#the odds of voting for the incumbent goes up 
+#by a factor of .53.  
+#Similarly, for every one unit increase in "Incumbent Thermometer",
+#the odds of voting for the incumbent goes up 
+#by a factor of 1.06. 
+
+
+
+###########################
+
+
+####Prediction####
+
+Sim_Beta_2 = MASS::mvrnorm(1000, coef(Logit_2020_2), vcov(Logit_2020_2))
+
+View(Sim_Beta_2)
+
+nd = cbind(1, seq(from = 1, to = 7, by = 1), seq(from = 0, to = 100, by = .1))
+
+Prediction_Means = Sim_Beta_2 %*% t(nd) %>% pnorm() %>% apply(2,mean)
+#Note, can try changing pnorm() to plogis().
+
+hist(Prediction_Means)
+
+
+
+########################################################################
+
+
+####TABLES####
+
+install.packages("stargazer")
+library(stargazer)
+stargazer(lm1, type="text", out="word")
+?stargazer
+
+
+stargazer(Logit_2020_2, type="text", out="word")
+summary(Logit_2020_2)
+
+
+stargazer(Main_Effects_Model_2, type="text", out="word")
+
+
+
+
+
+
+
+
+
+
+
+
+### Another way (as per Chris) ###
+model<-glm(no_mask~rep_ft, clean_data, family=binomial("logit"))
+summary(model)
+nd=data.frame(rep_ft=seq(from=0,to=100,by=1))
+pred=predict(model, nd ) %>% plogis()
+plot.data<-data.frame(x=nd[,1],y=pred)
+names(plot.data)
+library(ggplot2)
+ggplot(Sim_Beta_2, aes(x=x, y=y))+
+  geom_line(colour="red", alpha=0.15)+
+  labs(title="Not Wearing a Mask, by Party",
+       caption="APL Election Study")+
+  xlab("Feelings toward Republicans")+
+  ylab("Probability")
+
+### Another way (as per Chris) ###
+model<-glm(no_mask~rep_ft, clean_data, family=binomial("logit"))
+summary(model)
+nd=data.frame(rep_ft=seq(from=0,to=100,by=1))
+pred=predict(model, nd ) %>% plogis()
+plot.data<-data.frame(x=nd[,1],y=pred)
+names(plot.data)
+library(ggplot2)
+ggplot(plot.data, aes(x=x, y=y))+
+  geom_line(colour="red", alpha=0.15)+
+  labs(title="Not Wearing a Mask, by Party",
+       caption="APL Election Study")+
+  xlab("Feelings toward Republicans")+
+  ylab("Probability")
+
+
+
+
+
+names(plot.data)<-c("mean", "low", "high", "PID", "IncumbentTherm", "IncumbentApproval")
+
+names(plot.data)<-c("mean", "low", "high", "PID", "ideology")
+
+
+
+
+ggplot(Sim_Beta_2, aes(x=Incumbent_Approval_2020_Cleaned_Reversed, y=mean, 
+                       ymin=low, ymax=high, group=PartyID_2020_Cleaned_Factor))+
+  geom_line(col="purple", alpha=0.25)+
+  geom_ribbon(col='brown', alpha=0.10)+
+  ylim(limit=c(0,1))+
+  ggtitle("Predicting Vote for Incumbent")
+
+ggplot(plot.data, aes(x=ideology, y=mean, 
+                      ymin=low, ymax=high, group=PID))+
+  geom_line(col="purple", alpha=0.25)+
+  geom_ribbon(col='brown', alpha=0.10)+
+  ylim(limit=c(0,1))+
+  ggtitle("Predicting Authoritarianism, PID and Ideology")
+
+
+
+#Ronbo's example
+
+library(dplyr)
+load("~/desktop/rongbo/anes.Rdata")
+names(anes)
+### The model is both nonlinear and nonadditive
+### What you set your "control" covariates at matters
+anes$autho<-ifelse(anes$auth>0.5, 1, 0)
+m1<-glm(autho ~ party_id +ideology, 
+        data=anes, family=binomial("logit"))
+## Effect among Democrats
+nd<-cbind(1, 1, seq(1,7,1))
+sim_beta=MASS::mvrnorm(1000, coef(m1), vcov(m1))
+
+nd<-cbind(1, 1, seq(1,7,1))
+
+mean=nd %*% t(sim_beta) %>% plogis() %>% apply(1, mean) %>% as.numeric()
+low=nd %*% t(sim_beta) %>% plogis() %>% apply(1, quantile, 0.025) %>% as.numeric()
+high=nd %*% t(sim_beta) %>% plogis() %>% apply(1, quantile, 0.975) %>% as.numeric()
+dat1<-cbind(mean, low, high, 2 , seq(1,7,1))
+
+nd<-cbind(1, 7, seq(1,7,1))
+
+mean=nd %*% t(sim_beta) %>% plogis() %>% apply(1, mean) %>% as.numeric()
+low=nd %*% t(sim_beta) %>% plogis() %>% apply(1, quantile, 0.025) %>% as.numeric()
+high=nd %*% t(sim_beta) %>% plogis() %>% apply(1, quantile, 0.975) %>% as.numeric()
+dat2<-cbind(mean, low, high, 6, seq(1,7,1))
+
+plot.data<-data.frame(rbind(dat1, dat2))
+plot.data
+
+names(plot.data)<-c("mean", "low", "high", "PID", "ideology")
+
+ggplot(plot.data, aes(x=ideology, y=mean, 
+                      ymin=low, ymax=high, group=PID))+
+  geom_line(col="purple", alpha=0.25)+
+  geom_ribbon(col='brown', alpha=0.10)+
+  ylim(limit=c(0,1))+
+  ggtitle("Predicting Authoritarianism, PID and Ideology")
+
+
+
+
